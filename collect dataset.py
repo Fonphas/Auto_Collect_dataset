@@ -6,16 +6,17 @@ import logging
 from datetime import datetime
 
 # ===== CONFIG =====
-CAMERA_INDEX    = 0
-LINE_START      = (100, 280)
-LINE_END        = (800, 280)
-NUM_SAMPLES     = 50
-OBJECT_THRESHOLD = 40   # diff vs background → object present
-STABLE_THRESHOLD = 10   # diff vs prev frame → object stopped
-STABLE_FRAMES   = 8
-COOLDOWN_SEC    = 2.0
-CAM_W, CAM_H    = 1280, 720
-BASE_SAVE_FOLDER = r"C:\Users\phassachol.jariya\Desktop\dataset"
+CAMERA_INDEX      = 1
+LINE_START        = (300, 280)
+LINE_END          = (800, 280)
+NUM_SAMPLES       = 50
+OBJECT_THRESHOLD  = 40   # diff vs background → object present
+STABLE_FRAMES     = 8    # frames object must be on line to trigger
+CAPTURE_DELAY_SEC = 1.0  # wait after trigger before capturing
+CAPTURE_COUNT     = 10   # number of pictures to take
+COOLDOWN_SEC      = 3.0
+CAM_W, CAM_H      = 1280, 720
+BASE_SAVE_FOLDER  = r"C:\Users\phassachol.jariya\Desktop\dataset"
 # ==================
 
 os.makedirs(BASE_SAVE_FOLDER, exist_ok=True)
@@ -36,10 +37,11 @@ def sample_line(frame, p1, p2, n):
 def diff(a, b):
     return np.linalg.norm(np.array(a, float) - np.array(b, float))
 
-def save_frame(frame):
+def save_frame(frame, index=None):
     folder = os.path.join(BASE_SAVE_FOLDER, datetime.now().strftime('%Y-%m-%d'))
     os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"capture_{datetime.now().strftime('%H%M%S_%f')}.png")
+    suffix = f"_{index:02d}" if index is not None else ""
+    path = os.path.join(folder, f"capture_{datetime.now().strftime('%H%M%S_%f')}{suffix}.png")
     if cv2.imwrite(path, frame):
         logging.info(f"[SAVED] {path}")
     else:
@@ -60,18 +62,18 @@ def main():
         return
 
     frame = cv2.flip(frame, 1)
-    bg_color   = sample_line(frame, LINE_START, LINE_END, NUM_SAMPLES)
-    prev_color = bg_color.copy()
+    bg_color       = sample_line(frame, LINE_START, LINE_END, NUM_SAMPLES)
     state          = "EMPTY"
     stable_counter = 0
+    trigger_time   = 0
     last_capture   = 0
 
     logging.info("Ready — 'b' = update background, 'q' = quit")
 
     STATE_COLORS = {
         "EMPTY":    (100, 100, 100),
-        "MOVING":   (0, 165, 255),
-        "STABLE":   (0, 255, 0),
+        "WAITING":  (0, 165, 255),
+        "DELAY":    (0, 255, 255),
         "COOLDOWN": (255, 0, 0),
     }
 
@@ -83,41 +85,43 @@ def main():
 
         frame = cv2.flip(frame, 1)
         cur = sample_line(frame, LINE_START, LINE_END, NUM_SAMPLES)
-
-        obj_present = diff(cur, bg_color)   > OBJECT_THRESHOLD
-        obj_moving  = diff(cur, prev_color) > STABLE_THRESHOLD
+        obj_present = diff(cur, bg_color) > OBJECT_THRESHOLD
 
         if state == "EMPTY":
             if obj_present:
-                state = "MOVING"
+                state = "WAITING"
                 stable_counter = 0
-                logging.info("Object detected")
+                logging.info("Object on line")
 
-        elif state == "MOVING":
+        elif state == "WAITING":
             if not obj_present:
                 state = "EMPTY"
-                logging.info("Object left")
-            elif not obj_moving:
-                stable_counter += 1
-                logging.info(f"Stable [{stable_counter}/{STABLE_FRAMES}]")
-                if stable_counter >= STABLE_FRAMES:
-                    state = "STABLE"
-            else:
                 stable_counter = 0
+                logging.info("Object left")
+            else:
+                stable_counter += 1
+                logging.info(f"Holding [{stable_counter}/{STABLE_FRAMES}]")
+                if stable_counter >= STABLE_FRAMES:
+                    trigger_time = time.time()
+                    state = "DELAY"
+                    logging.info(f"Triggered — waiting {CAPTURE_DELAY_SEC}s")
 
-        elif state == "STABLE":
-            if time.time() - last_capture > COOLDOWN_SEC:
-                logging.info(">>> CAPTURE <<<")
-                save_frame(frame)
-                last_capture = time.time()
-            state = "COOLDOWN"
+        elif state == "DELAY":
+            if time.time() - trigger_time >= CAPTURE_DELAY_SEC:
+                if time.time() - last_capture > COOLDOWN_SEC:
+                    logging.info(f">>> BURST CAPTURE x{CAPTURE_COUNT} <<<")
+                    for i in range(CAPTURE_COUNT):
+                        ret_b, burst = cap.read()
+                        if ret_b:
+                            burst = cv2.flip(burst, 1)
+                            save_frame(burst, index=i + 1)
+                    last_capture = time.time()
+                state = "COOLDOWN"
 
         elif state == "COOLDOWN":
             if not obj_present:
                 state = "EMPTY"
                 logging.info("Ready for next object")
-
-        prev_color = cur
 
         color = STATE_COLORS.get(state, (255, 255, 255))
         cv2.line(frame, LINE_START, LINE_END, color, 2)
