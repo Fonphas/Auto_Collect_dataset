@@ -1,0 +1,20 @@
+# Auto Collect Dataset
+
+OpenCV for automatically collecting for labeling images for YOLO object detection training.
+
+## Features
+
+- 🎥 Live camera and video file capture
+- 🏷️ Automatic image collection with YOLO inference
+
+## Installation
+
+Requires Python 3.10 or higher.
+
+```bash
+# Clone the repo
+git clone https://github.com/Fonphas/Auto_Collect_dataset.git
+cd Auto_Collect_dataset
+
+Then connect your camera or load a video file from the sidebar 
+to start collecting images.
