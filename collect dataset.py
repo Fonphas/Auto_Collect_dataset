@@ -6,9 +6,9 @@ import logging
 from datetime import datetime
 
 # ===== CONFIG =====
-CAMERA_INDEX      = 1
-LINE_START        = (300, 280)
-LINE_END          = (800, 280)
+CAMERA_INDEX      = 0
+LINE_START        = (80, 280) # (x, y)
+LINE_END          = (1200, 280) # (x, y)
 NUM_SAMPLES       = 50
 OBJECT_THRESHOLD  = 40   # diff vs background → object present
 STABLE_FRAMES     = 8    # frames object must be on line to trigger
